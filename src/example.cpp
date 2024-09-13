@@ -4,6 +4,8 @@
 #include <iostream>
 #include <unordered_map>
 
+#include <Windows.h>
+
 
 std::unordered_map<GUID, DeviceSummary> g_device_info;
 
@@ -67,6 +69,24 @@ void device_change_callback(DeviceSummary info, DeviceActionType action)
         ) << std::endl;
     }
 }
+
+
+HWND GetConsoleHwnd(void)
+{
+#define MY_BUFSIZE 1024 // Buffer size for console window titles.
+    HWND hwndFound;         // This is what is returned to the caller.
+    char pszOldWindowTitle[MY_BUFSIZE]; // Contains original
+    // WindowTitle.
+
+    // Fetch current window title.
+
+    GetConsoleTitle(pszOldWindowTitle, MY_BUFSIZE);
+
+    hwndFound = FindWindow(NULL, pszOldWindowTitle);
+
+    return hwndFound;
+}
+
 
 int main(int argc, char *argv[])
 {

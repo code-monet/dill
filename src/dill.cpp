@@ -35,6 +35,8 @@ static DeviceDataStore g_data_store;
 JoystickInputEventCallback g_event_callback = nullptr;
 DeviceChangeCallback g_device_change_callback = nullptr;
 
+HWND g_window_handle = nullptr;
+
 // Thread handles
 HANDLE g_message_thread = NULL;
 HANDLE g_joystick_thread = NULL;
@@ -426,7 +428,7 @@ DWORD WINAPI joystick_update_thread(LPVOID l_param)
 DWORD WINAPI message_handler_thread(LPVOID l_param)
 {
     // Initialize the window to receive messages through
-    HWND hWnd = create_window();
+    HWND hWnd = g_window_handle;
     if(hWnd == NULL)
     {
         logger->critical("Could not create message window!");
@@ -507,6 +509,13 @@ BOOL CALLBACK set_axis_range(LPCDIDEVICEOBJECTINSTANCE lpddoi, LPVOID pvRef)
     return DIENUM_CONTINUE;
 }
 
+BOOL CALLBACK enum_effects_cb(LPCDIEFFECTINFO pdei,
+    LPVOID pvRef
+) {
+    std::cout << "Eff GUID " << guid_to_string(pdei->guid) << " name " << pdei->tszName << std::endl;
+    return DIENUM_CONTINUE;
+}
+
 void initialize_device(GUID guid, std::string name)
 {
     // Prevent any operations on this device until initialization is done
@@ -548,13 +557,42 @@ void initialize_device(GUID guid, std::string name)
         );
     }
 
+    result = device->EnumEffects(&enum_effects_cb, nullptr, DIEFT_ALL);
+    if (FAILED(result))
+    {
+        logger->error(
+            "{}: Failed enumerating effects, {}",
+            guid_to_string(guid),
+            error_to_string(result)
+        );
+    }
+    else {
+        std::cout << "Enum done" << std::endl;
+    }
+    DIPROPDWORD dipdw = {};
+    dipdw.diph.dwSize = sizeof(DIPROPDWORD);
+    dipdw.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+    dipdw.diph.dwHow = DIPH_DEVICE;
+    dipdw.dwData = FALSE;
+
+    if (FAILED(result = device->SetProperty(DIPROP_AUTOCENTER, &dipdw.diph)))
+    {
+        logger->error(
+            "{}: Failed disabling center spring, {}",
+            guid_to_string(guid),
+            error_to_string(result)
+        );
+    }
+
     // Store device in the data storage
     g_data_store.device_map[guid] = device;
 
     // Setting cooperation level
+    g_window_handle = create_window();
     result = device->SetCooperativeLevel(
-        NULL,
-        DISCL_NONEXCLUSIVE | DISCL_BACKGROUND
+        g_window_handle,
+        // DISCL_NONEXCLUSIVE | DISCL_BACKGROUND
+        DISCL_EXCLUSIVE | DISCL_BACKGROUND
     );
     if(FAILED(result))
     {
@@ -766,6 +804,51 @@ void initialize_device(GUID guid, std::string name)
 
     // Allow operating on the device
     g_data_store.is_ready[guid] = true;
+
+    LPDIRECTINPUTEFFECT     g_pEffect = nullptr;
+    DWORD rgdwAxes[2] = { DIJOFS_X, DIJOFS_Y };
+    LONG rglDirection[2] = { 0, 0 };
+    DICONSTANTFORCE cf = { DI_FFNOMINALMAX / 4 };
+
+    DIEFFECT eff = {};
+    eff.dwSize = sizeof(DIEFFECT);
+    eff.dwFlags = DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS;
+    eff.dwDuration = 5000000;
+    eff.dwSamplePeriod = 0;
+    eff.dwGain = DI_FFNOMINALMAX;
+    eff.dwTriggerButton = DIEB_NOTRIGGER;
+    eff.dwTriggerRepeatInterval = 0;
+    eff.cAxes = 1;
+    eff.rgdwAxes = rgdwAxes;
+    eff.rglDirection = rglDirection;
+    eff.lpEnvelope = 0;
+    eff.cbTypeSpecificParams = sizeof(DICONSTANTFORCE);
+    eff.lpvTypeSpecificParams = &cf;
+    eff.dwStartDelay = 0;
+
+    // Create the prepared effect
+    if (FAILED(result = device->CreateEffect(GUID_ConstantForce,
+        &eff, &g_pEffect, nullptr)))
+    {
+        logger->error(
+            "{}: Failed creating effect, {}",
+            guid_to_string(guid),
+            error_to_string(result)
+        );
+    }
+
+    if (g_pEffect) {
+        if (FAILED(result = g_pEffect->Start(5, DIES_SOLO))) {
+            logger->error(
+                "{}: Failed to start effect, {}",
+                guid_to_string(guid),
+                error_to_string(result)
+            );
+        }
+    }
+    else {
+        std::cout << "Could not create effect" << std::endl;
+    }
 }
 
 BOOL CALLBACK handle_device_cb(LPCDIDEVICEINSTANCE instance, LPVOID data)
