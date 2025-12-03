@@ -739,16 +739,25 @@ void initialize_device(GUID guid, std::string name)
 
         else
         {
-            // Some other invalid axis count information returned, simply trust
-            // the axis enumeration.
-            info.axis_count = axis_indices.size();
-            for(size_t i=0; i<axis_indices.size(); ++i)
+            // Some other invalid axis count information returned, simply trust the
+            // axis enumeration
+            info.axis_count = capabilities.dwAxes;
+            if (info.axis_count > 8) {
+                info.axis_count = axis_indices.size();
+            }
+            for(size_t i=0; i<info.axis_count; ++i)
             {
                 info.axis_map[i].linear_index = i+1;
-                info.axis_map[i].axis_index = axis_indices[i];
+                info.axis_map[i].axis_index = i+1;
             }
+            // info.axis_count = axis_indices.size();
+            // for(size_t i=0; i<axis_indices.size(); ++i)
+            // {
+            //     info.axis_map[i].linear_index = i+1;
+            //     info.axis_map[i].axis_index = axis_indices[i];
+            // }
             logger->warn(
-                "{} {}: Overriding reported number of axes,  capabilities={} enumerated={}",
+                "{} {}: (NOT) Overriding reported number of axes,  capabilities={} enumerated={}",
                 info.name,
                 guid_to_string(info.device_guid),
                 capabilities.dwAxes,
